@@ -1,0 +1,137 @@
+A Guided Tour of the ArchibaldOS Configuration
+
+Introduction: Your System as a Blueprint
+
+Welcome to the engine room of ArchibaldOS. This guide pulls back the curtain on the declarative configuration that makes this system uniquely powerful and reproducible. We're going to show you not just what every line does, but why it makes ArchibaldOS a superior platform for real-time audio.
+
+The core principle behind ArchibaldOS is declarative configuration. Think of it like a master blueprint for a house or a detailed recipe for a meal. Instead of manually installing software and changing settings one by one, you describe the final state you want your system to be in, and Nix builds it for you. This approach makes your system predictable, reproducible, and incredibly powerful.
+
+Our tour begins at the command center: the flake.nix file. This is the main entry point that organizes and assembles all the other configuration files—called modules—into a cohesive, functional operating system.
+
+
+--------------------------------------------------------------------------------
+
+
+1.0 The Command Center: Dissecting flake.nix
+
+The flake.nix file is the highest level of control for the entire ArchibaldOS project. It defines where the system gets its software, what components to include, and how to build the final operating systems for different types of hardware. It's the conductor of the orchestra, telling each section when and how to play.
+
+1.1 The inputs: Gathering Your Ingredients
+
+The inputs section is where ArchibaldOS declares all of its external dependencies. Just like a recipe lists its ingredients, this section locks in the exact versions of software collections and hardware configurations needed to build the system. This guarantees that a build today will be identical to a build a year from now. This is the foundation of bit-for-bit reproducibility, guaranteeing your studio setup can be perfectly replicated on a portable live rig.
+
+Key inputs include:
+
+* nixpkgs: This is the main software repository for NixOS, containing a massive collection of packages, from the Linux kernel itself to the audio applications you use.
+* musnix: A specialized collection of tools and configurations focused on creating a real-time, professional audio environment with ultra-low latency.
+* nixos-rk3588: A hardware-specific set of configurations that provides support for ARM-based devices powered by the Rockchip RK3588 system-on-a-chip, such as the Orange Pi 5.
+
+1.2 The outputs: Defining What to Build
+
+The outputs section takes the ingredients from the inputs and defines everything that can be built from them. This includes development environments, individual packages, and, most importantly, complete operating systems.
+
+The most significant part of this section is the nixosConfigurations block. This is where each unique version of ArchibaldOS is defined, showcasing its versatility. From this single flake, you can build the installable Live ISO, specialized ARM images for devices like the Orange Pi 5, a generic ARM build, and even a headless server variant (archibaldOS-server).
+
+Now that we understand the overall structure of the flake.nix, let's zoom in on a specific system configuration to see how these pieces come together.
+
+
+--------------------------------------------------------------------------------
+
+
+2.0 Anatomy of a System: The x86 Live ISO (archibaldOS-iso)
+
+We will use the archibaldOS-iso configuration as our primary example. This is the version you would download and boot from a USB drive to install ArchibaldOS on a typical desktop or laptop computer.
+
+Each system defined in nixosConfigurations is built by combining a list of smaller, more focused configuration files called modules. This modular approach keeps the configuration clean and manageable, allowing different systems to share common settings (like user accounts) while having unique, hardware-specific tweaks.
+
+The archibaldOS-iso build uses the following core modules:
+
+* "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-graphical-calamares-plasma6.nix": This essential module provides the user-friendly graphical installer, Calamares, making the installation process smooth and intuitive.
+* musnix.nixosModules.musnix: Integrates the core Musnix configurations for a professional audio environment.
+* ./modules/base.nix: Configures foundational system settings.
+* ./modules/audio.nix: Contains audio-specific tuning and packages.
+* ./modules/desktop.nix: Sets up the KDE Plasma 6 desktop environment.
+* ./modules/users.nix: Defines the user accounts.
+* ./modules/branding.nix: Controls the system's visual identity.
+
+In addition to importing these shared modules, the archibaldOS-iso configuration defines several settings directly. These are crucial for squeezing every last drop of performance out of the hardware for real-time audio.
+
+Key Performance Settings for x86 Audio
+
+* musnix.kernel.realtime = true; This is the master switch that enables the PREEMPT_RT kernel, a special version of the Linux kernel heavily modified for extreme time sensitivity. It's the foundation for achieving sub-1.5ms round-trip latency.
+* powerManagement.cpuFreqGovernor = "performance"; This setting forces the CPU to run at its maximum clock speed at all times. While this uses more power, it eliminates the tiny delays (latency) that occur when a CPU has to "wake up" or ramp up its speed, ensuring consistent, xrun-free operation.
+* boot.kernel.sysctl = { "vm.swappiness" = lib.mkForce 0; }; This tells the OS to avoid using slow disk swap at all costs. Accessing a drive is thousands of times slower than accessing RAM. This is crucial for how ArchibaldOS can sustain professional audio processing on a decade-old MacBook Air with only 4GB of RAM—a task where other operating systems would fail.
+
+Now that we've seen how modules are used to assemble a system, let's take a closer look at what's inside some of the most important ones.
+
+
+--------------------------------------------------------------------------------
+
+
+3.0 The Building Blocks: A Deep Dive into Key Modules
+
+This is where the real magic happens. Each module has a specific job, from tuning the kernel for audio to defining user accounts.
+
+3.1 The Audio Engine (audio.nix and musnix settings)
+
+This module contains the most critical settings for achieving the ultra-low-latency audio that ArchibaldOS is known for. It works hand-in-hand with musnix to fine-tune the Linux kernel with several key boot parameters.
+
+Kernel Parameter	Purpose & Performance Impact
+threadirqs	What it does: Forces hardware interrupt requests (IRQs) to run as separate threads. <br> Why it matters: This allows audio-related interrupts to be given a higher priority than less important system tasks, preventing audio glitches and dropouts.
+isolcpus=1-3	What it does: Isolates CPU cores 1, 2, and 3 from the general system scheduler. <br> Why it matters: This creates a protected "zone" where audio applications can run without being interrupted by other system processes, ensuring maximum stability.
+nohz_full=1-3	What it does: Stops the kernel's scheduler "tick" on the isolated cores. <br> Why it matters: This works with isolcpus to create a truly "quiet" execution environment, preventing even microscopic interruptions from the kernel itself.
+intel_idle.max_cstate=1	What it does: Prevents Intel CPUs from entering deep power-saving sleep states. <br> Why it matters: Waking up from deep sleep introduces latency. By keeping the CPU ready, this guarantees the fastest possible response time.
+processor.max_cstate=1	What it does: A generic version of the Intel setting for broader compatibility. <br> Why it matters: Ensures CPUs from vendors like AMD also avoid deep sleep states, achieving the same goal of minimizing wake-up latency across different hardware.
+
+Together, these parameters create a protected, high-priority execution environment for audio, which is empirically validated by cyclictest latencies as low as 19µs on modern hardware.
+
+3.2 The Foundation (base.nix)
+
+The base.nix module configures foundational system settings that apply to all variants of ArchibaldOS, whether it's a desktop, a server, or an ARM device. It ensures a consistent baseline of functionality.
+
+* SSH Service (services.openssh): This service is enabled by default, providing a secure way to log in and manage the device remotely over a network. This is especially useful for "headless" systems (like a server or an embedded device) that don't have a monitor connected.
+* Nix Garbage Collection (nix.gc): This setting automates system cleanup. Every time you update an ArchibaldOS system, the old version is kept in case you need to roll back. This setting automatically deletes any system versions that are older than 30 days, preventing your disk from filling up over time.
+
+3.3 Users and Permissions (users.nix)
+
+This module defines the default user accounts for the system, with roles tailored for different stages of use.
+
+* nixos: This is the only usable account on the Live ISO. It's designed to let anyone easily boot up the system to try it out or run the installer. Its password is set to "nixos" for easy access.
+* audio-user: This is the main user account intended for a fully installed system. It is automatically added to all the necessary system groups (audio, realtime, jackaudio) required for professional audio work. This user is explicitly disabled on the Live ISO to ensure a clean trial environment.
+
+This module also sets security.sudo.wheelNeedsPassword = false, which allows users in the wheel administrative group to perform system tasks with sudo without needing to re-enter their password, streamlining the user experience.
+
+3.4 Aesthetics and Branding (branding.nix)
+
+This module demonstrates the power of declarative configuration by managing the system's visual identity. Instead of manually changing logos or wallpapers, the appearance is defined in code.
+
+* asciiArt: Displays custom ASCII art when using the text-based installer.
+* splash: Enables a graphical boot screen with a custom logo. This is for x86 systems only due to compatibility issues on ARM.
+* wallpapers: Deploys the official system wallpapers for the desktop environment.
+
+With a clear understanding of the individual building blocks, we can now appreciate how they can be combined in different ways to produce radically different systems.
+
+
+--------------------------------------------------------------------------------
+
+
+4.0 The Power of Modularity: Contrasting x86 and ARM Configurations
+
+This is where the declarative model truly shines. By swapping out just a few lines and adding a hardware-specific module, ArchibaldOS can be built for two completely different computer architectures (x86 and ARM) using the same shared foundation. The table below compares the x86 Live ISO with the Orange Pi 5 build.
+
+Configuration Setting	x86_64 (archibaldOS-iso)	aarch64 (archibaldOS-orangepi5)
+Real-Time Kernel	kernel.realtime = true;	kernel.realtime = false;
+CPU Isolation	isolcpus=1-3	nohz_full=1-7
+Installed Software	A full suite of professional audio software (Audacity, Carla, Zrythm, MuseScore, Surge, ZynAddSubFX, Dragonfly Reverb, etc.)	A lightweight, optimized suite for ARM (Qtractor, Guitarix, Pure Data, etc.)
+
+These differences are not arbitrary; they are deliberate choices tailored to the hardware. The ARM build disables the full real-time kernel (kernel.realtime = false;) to use the specific, board-optimized kernel provided by the nixos-rk3588 module, which is more stable on that hardware. It also uses a different kernel parameter (nohz_full) for CPU management and installs a smaller, "lite" suite of audio software to respect the more limited processing power and memory of a single-board computer. This demonstrates the core power of NixOS: a single, unified codebase produces bespoke operating systems, delivering peak performance on a high-end x86 workstation and resource-efficient stability on a low-power ARM board.
+
+
+--------------------------------------------------------------------------------
+
+
+5.0 Conclusion: The Declarative Advantage
+
+Throughout this tour, we've seen how ArchibaldOS is constructed not as a static image, but as a dynamic blueprint. The flake.nix acts as the master plan, assembling a series of specialized modules—for audio, users, and branding—into multiple, distinct operating systems.
+
+The core lesson is that a single, well-organized set of configuration files can define, build, and maintain a full-featured x86 workstation, a lightweight ARM device, and even a headless server. This is the declarative advantage: eliminating the "it works on my machine" syndrome that plagues traditional OSes and giving you a powerful, transparent, and perfectly reproducible system. Once you experience this level of consistency, you'll wonder how you ever managed without it.
