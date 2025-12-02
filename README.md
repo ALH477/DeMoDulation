@@ -6,6 +6,8 @@ DeMoDulation (DeMoD) is an open-source, fully reproducible real-time digital sig
 
 The entire configuration has been thoroughly tested and proven stable on a 2.2 GHz quad-core Intel i5 (early 2010s, Sandy Bridge/Ivy Bridge era) with only 8 GB RAM, achieving rock-solid performance at 96 kHz / 64 samples with negligible xruns even under heavy SuperCollider + VST + GNU Radio load.
 
+The OS that makes this possible can be found here https://github.com/ALH477/ArchibaldOS
+
 ## Features
 
 - PREEMPT_RT Linux kernel with Musnix optimizations (10–50 µs typical cyclictest)
