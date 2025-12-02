@@ -57,22 +57,6 @@ All builds use the exact same flake and achieve identical functionality.
 
 All configurations <0.01 % xruns over 24 h continuous load.
 
-## Quick Start
-
-```bash
-git clone https://github.com/ALH477/DeMoDulation.git
-cd DeMoDulation
-
-# Choose your profile
-sudo nixos-rebuild switch --flake .#demod-ewaste      # old Intel/AMD PCs
-# or
-sudo nixos-rebuild switch --flake .#demod-framework13
-# or  
-sudo nixos-rebuild switch --flake .#demod-rpi5
-```
-
-After rebuild, the Behringer interface is auto-configured at 96 kHz / 64 samples (editable in `/etc/pipewire/pipewire.conf.d/99-lowlatency.conf`).
-
 ## License
 
 This project is dedicated to the public domain under **CC0 1.0 Universal**.  
