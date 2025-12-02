@@ -1,0 +1,572 @@
+ArchibaldOS Official Deployment Manual
+
+1.0 Introduction to ArchibaldOS
+
+1.1 Overview
+
+ArchibaldOS is a professional-grade, NixOS-based operating system engineered by DeMoD LLC to deliver ultra-low-latency, real-time audio production. Its strategic importance lies in its ability to achieve bit-for-bit reproducibility across diverse hardware platforms, from high-end studio workstations to portable embedded devices. This manual provides a comprehensive guide for deploying and managing ArchibaldOS in professional audio environments.
+
+The system is tailored for a specific set of professionals who require deterministic performance and deployment consistency. This includes:
+
+* Musicians
+* Audio Engineers
+* Sound Designers
+* Live Performers
+* Embedded-Audio Developers
+
+The core value proposition of ArchibaldOS is rooted in its "minimal oligarchy" design philosophy and its declarative Nix Flake architecture. This combination directly addresses the persistent "it works on my machine" problem that plagues traditional operating systems. By defining the entire system state in code, ArchibaldOS ensures that a configuration tested in a studio environment can be replicated identically on a portable Single-Board Computer (SBC). "Trust us, once you experience deployment consistency at this level, you'll wonder how you ever managed without it."
+
+ArchibaldOS serves as the foundational operating system layer for the DeMoD platform, a cohesive ecosystem for real-time digital signal processing (DSP). It powers DIY DSP devices and enables professional-grade audio and Software-Defined Radio (SDR) applications on low-cost hardware, as detailed in the open-source DeMoDulation guide.
+
+The following sections will explore the detailed system architecture that enables these powerful capabilities.
+
+1.2 Key Features at a Glance
+
+This section summarizes the critical features that differentiate ArchibaldOS for professional audio work and reproducible deployments.
+
+* Ultra-Low Latency Audio: Achieves sub-5ms round-trip latency through a fully tuned PREEMPT_RT kernel and specialized Musnix optimizations for deterministic audio processing.
+* Modular & Declarative Architecture: Leverages Nix Flakes to provide atomic system updates, instantaneous rollbacks, and bit-for-bit reproducible builds across different hardware architectures.
+* Multi-Platform Support: Offers unified deployments across high-end x86_64 workstations, aarch64 Single-Board Computers (SBCs), and Apple Silicon hardware via Asahi Linux.
+* Professional Software Suite: Includes a curated selection of industry-standard DAWs, plugins, and DSP programming environments, with distinct suites for high-performance x86 and resource-constrained ARM platforms.
+* Lightweight Desktop Environment: Utilizes a performance-optimized KDE Plasma 6 on Wayland, providing a modern user interface that is also touch-screen friendly for portable devices.
+
+These features are made possible by a carefully engineered system architecture, which we will now explore in greater detail.
+
+2.0 System Architecture and Core Components
+
+2.1 The Declarative Foundation: NixOS and Flakes
+
+The strategic decision to build ArchibaldOS on NixOS and Nix Flakes is central to its value. This declarative model moves system configuration from a series of imperative scripts and manual changes to a single, version-controlled source of truth. This approach enables atomic updates, where system changes are applied in a single, all-or-nothing transaction, and safe rollbacks, allowing an administrator to instantly revert to a previous known-good state if an update introduces instability. Most importantly for professional production environments, it guarantees bit-for-bit reproducibility, ensuring every deployment is identical down to the binary level.
+
+The flake.nix file serves as the central entry point for the entire system configuration. It declaratively defines all external dependencies (inputs) such as nixpkgs, musnix for audio tuning, disko for partitioning, and nixos-rk3588 for board-specific support. The flake also specifies all system outputs, including the various build targets and development shells, making the entire project self-contained and easy to manage.
+
+The project's modular structure enhances clarity and maintainability. Key system concerns are separated into dedicated files:
+
+* base.nix: Contains the base system configuration, including timezone, SSH settings, and default Nix package manager settings.
+* audio.nix: Manages all real-time audio components, such as PipeWire, JACK, and critical kernel tuning parameters.
+* desktop.nix: Configures the KDE Plasma 6 desktop environment and display manager.
+* users.nix: Defines the default user accounts for different deployment scenarios (e.g., nixos for the live ISO, audio-user for installed systems).
+* branding.nix: Controls the DeMoD LLC branding elements like the boot splash screen and system wallpapers.
+* server.nix: Defines the configuration for the headless server variant.
+* orange-pi-5.nix: Contains hardware-specific optimizations for the Orange Pi 5 platform.
+
+Finally, the Nix architecture provides robust support for cross-compilation. This feature allows system integrators to build ARM images directly from a more powerful x86_64 host machine, producing reproducible binaries with verifiable hashes and drastically reducing build times compared to native compilation on ARM hardware.
+
+This declarative foundation provides the framework upon which the specialized real-time audio components are built.
+
+2.2 Real-Time Audio Subsystem
+
+The ArchibaldOS audio subsystem is purpose-built to minimize latency and eliminate audio dropouts (xruns) under the sustained workloads of professional production. Its architecture is a careful composition of a real-time kernel, prioritized interrupt handling, and a modern audio routing infrastructure.
+
+The core real-time optimizations are provided by Musnix, a specialized set of NixOS modules for audio production. For x86 systems, Musnix enables the PREEMPT_RT kernel, which allows for full preemption of kernel tasks for sub-millisecond responsiveness. It also integrates RTIRQ for prioritizing hardware interrupts, ensuring that audio device interrupts are always handled before less critical system tasks. The DAS watchdog is included to detect and prevent audio system deadlocks.
+
+The backbone for professional audio routing is formed by PipeWire and JACK. This modern stack provides seamless compatibility with legacy ALSA applications while offering a powerful graph-based routing system that supports the extremely low quantum sizes (e.g., 32 samples) required for real-time monitoring and performance.
+
+These components are supported by a series of deep system-level tunings, summarized below.
+
+System-Level Audio Tuning Parameters
+
+Parameter	Purpose
+PREEMPT_RT Kernel	Provides full real-time preemption on x86_64 systems for sub-millisecond responsiveness.
+threadirqs	Forces interrupt handlers to run as high-priority kernel threads, allowing them to be scheduled with real-time priority alongside audio threads.
+isolcpus / nohz_full	Isolates specific CPU cores from the general kernel scheduler, creating a sanctuary where audio threads can run without interruption from other system processes.
+intel_idle.max_cstate=1 / processor.max_cstate=1	Prevents the CPU from entering deep sleep states (C-states > 1), which introduce significant latency when waking up and can cause audible glitches.
+powerManagement.cpuFreqGovernor = "performance"	Locks the CPU at its maximum frequency, preventing dynamic scaling that can introduce latency spikes during audio processing.
+vm.swappiness = 0	Disables swapping to disk, preventing high-latency page faults that would otherwise cause audible xruns when system memory is under pressure.
+rtirq.highList = "snd_usb_audio"	Explicitly elevates USB audio device interrupts to the highest priority on ARM systems, compensating for the lack of a full PREEMPT_RT kernel.
+
+These architectural decisions are deployed across various hardware platforms, each with a specific build profile tailored to its capabilities.
+
+2.3 Build Variants and Target Profiles
+
+ArchibaldOS is not a monolithic system but rather a unified Nix flake that generates multiple, distinct build targets. Each target is carefully tailored for a specific use case and hardware architecture, ensuring optimal performance and resource utilization without unnecessary components.
+
+* archibaldOS-iso (x86_64): This is a bootable live ISO designed for standard desktop and laptop computers. It includes the Calamares graphical installer for a user-friendly setup, the full suite of professional audio software, and a fully patched PREEMPT_RT kernel for the lowest possible latency.
+* archibaldOS-orangepi5 (aarch64): This is an optimized SD card image specifically for the Orange Pi 5 Single-Board Computer, which is based on the powerful Rockchip RK3588 SoC. It uses a board-specific kernel provided by the nixos-rk3588 flake and includes a lightweight audio software suite suitable for embedded and portable DSP applications.
+* archibaldOS-arm-generic (aarch64): A generic ARM build intended for other Single-Board Computers. This variant omits board-specific modules like the one for the Orange Pi 5 but retains the core real-time audio tunings, making it a flexible starting point for custom hardware integrations.
+* archibaldOS-server (x86_64): A headless server variant designed for remote management via SSH. In this profile, all graphical and audio components are disabled to minimize the system footprint and attack surface, making it ideal for build servers or remote management nodes.
+
+The next section details the specific hardware configurations on which these variants have been tested and validated.
+
+3.0 Supported Platforms and Performance Benchmarks
+
+3.1 Validated Hardware Configurations
+
+Achieving predictable, ultra-low-latency performance is critically dependent on the underlying hardware. To ensure reliability, ArchibaldOS has been rigorously tested and validated across a range of x86_64 and aarch64 systems, from modern high-performance laptops to legacy hardware and low-power SBCs.
+
+The following table details the x86_64 platforms that have undergone extensive testing. All tests were conducted by booting from an SD card and running a demanding real-time workload with a Behringer UMC204HD interface at 24-bit/96kHz.
+
+Platform	CPU	RAM	Storage	Performance Notes	Link
+Framework Laptop 16	AMD Ryzen 7 7840HS (8c/16t @ 3.8GHz boost)	32GB DDR5	NVMe SSD (optional)	1.2–1.4ms RTL @ 96kHz/64 samples; zero xruns with 12+ Guitarix FX	framework.com
+Framework Laptop 13 (Gen 11)	Intel Core i5-1135G7 (4c/8t @ 2.4GHz base, 4.2GHz boost)	8GB LPDDR4x	SD card boot	1.8–2.2ms RTL @ 96kHz/128 samples; <0.05% xruns with full FX chain	frame.work
+MacBook Air (Early 2014)	Intel Core i5-4260U (2c/4t @ 1.4GHz base, 2.7GHz boost)	4GB LPDDR3	SD card boot	2.4–3.1ms RTL @ 96kHz/256 samples; stable with 6–8 FX, occasional xrun under 100% CPU	support.apple.com
+
+Empirical Insight: The 2014 MacBook Air—running from a $10 microSD card—sustained professional-grade audio processing with multiple high-CPU effects at 96kHz/24-bit, a configuration that causes dropouts on macOS, Ubuntu, and Windows within minutes. This is enabled by PREEMPT_RT, isolcpus, and threadirqs, which isolate audio threads from system noise even on dual-core Haswell silicon. The Framework 13 with 8GB proves that low-memory systems are no barrier to real-time audio when paging is eliminated (swappiness=0) and the kernel is properly tuned.
+
+For ARM64 platforms, ArchibaldOS provides support for a growing list of devices, benefiting from tailored kernel modules and hardware-specific optimizations.
+
+Category	Devices / SoCs
+Raspberry Pi	Raspberry Pi 5 (BCM2712)
+Rockchip RK3588	Orange Pi 5 / 5 Plus, Radxa Rock 5A / 5B
+Rockchip RK3399	Pine64 Pinebook Pro, NanoPC-T4
+Amlogic	ODROID-C2, ODROID-HC4
+Apple Silicon	M1 / M1 Pro / M1 Max / M1 Ultra / M2 / M3 (Asahi)
+
+The performance achieved on these platforms is detailed in the following benchmark section.
+
+3.2 Performance Benchmarks
+
+This section provides empirical performance data from validated hardware configurations. The key metrics for evaluating real-time audio performance are round-trip latency (RTL), which is the total time for an audio signal to pass through the system; the quantum size (or buffer size), which directly influences latency; and the rate of xruns (buffer underruns or overruns), which manifest as audible clicks and pops.
+
+x86_64 Performance (Intel i7, PREEMPT_RT)
+
+* Quantum: 32 samples @ 48kHz
+* Theoretical Latency: 0.67ms
+* Measured Round-Trip Latency: 1.2–1.5ms (with USB interface)
+* Xruns: Xrun-free with proper tuning.
+
+Orange Pi 5 Performance (RK3588)
+
+* Quantum: 128 samples @ 48kHz
+* Theoretical Latency: 2.67ms
+* Measured Round-Trip Latency: 2.1–2.4ms (with USB interface)
+* Xruns: Xrun-free with performance governor.
+
+Raspberry Pi 5 Performance (BCM2712)
+
+* Quantum: 128 samples @ 48kHz
+* Theoretical Latency: 2.67ms
+* Measured Round-Trip Latency: 3.5–4ms (with USB interface)
+* Xruns: Occasional under heavy load.
+
+The benchmarks presented below for the DeMoDulation platform represent a practical application of ArchibaldOS. These results demonstrate the performance potential when the operating system is deployed on specific, low-cost hardware profiles (e-waste, Framework, and Raspberry Pi 5) for demanding Software-Defined Radio (SDR) and Digital Signal Processing (DSP) tasks, as referenced in the DeMoDulation guide.
+
+DeMoDulation Platform Performance
+
+Hardware	96 kHz / 64 spl RTL	192 kHz / 64 spl RTL	cyclictest max
+2011–2013 i5-2xxx 2.2 GHz + 8 GB	0.78 ms	1.12 ms	38 µs
+Later i7-8700 ewaste	0.67 ms	0.92 ms	24 µs
+Framework 13 Ryzen 7040/8040	0.71 ms	0.98 ms	19 µs
+Raspberry Pi 5 8 GB	1.19 ms	2.10 ms	47 µs
+
+To achieve these results, you must first build the system images from the source, a process detailed in the next section.
+
+4.0 Building ArchibaldOS from Source
+
+4.1 Prerequisites and Environment Setup
+
+Building ArchibaldOS from source requires a Nix-enabled environment. This can be a computer running NixOS natively or any other Linux distribution where the Nix package manager has been installed.
+
+For non-NixOS systems, install the Nix package manager with the following command:
+
+sh <(curl -L https://nixos.org/nix/install) --daemon
+
+
+Next, you must enable the experimental features required to work with Nix Flakes. Add the following lines to your Nix configuration file, typically located at ~/.config/nix/nix.conf:
+
+experimental-features = nix-command flakes
+
+
+With the environment prepared, clone the ArchibaldOS source repository and navigate into the project directory:
+
+git clone https://github.com/DeMoD-LLC/archibaldos.git
+cd archibaldos
+
+
+You are now ready to build the system images for the desired target architectures.
+
+4.2 Build Procedures for Target Architectures
+
+The following commands are used to build the various ArchibaldOS system images. All commands should be run from the root of the cloned repository.
+
+x86_64 Live ISO
+
+* Command: nix build .#packages.x86_64-linux.iso -L --verbose
+* Output: The bootable ISO image will be available at ./result/iso/archibaldos-x86_64.iso.
+
+aarch64 Orange Pi 5 SD Image (Cross-Compilation)
+
+* Command: nix build .#packages.aarch64-linux.orangepi5 --system x86_64-linux --extra-platforms aarch64-linux -L --verbose
+* Output: The SD card image will be available at ./result/sd-image/archibaldos-orangepi5.img.
+* Note: The output image may be compressed with Zstandard (.img.zst). If so, it must be decompressed before flashing using the command zstd -d <image_name>.img.zst.
+
+Other Build Targets
+
+For certain targets, a flashable image is not a predefined output. Instead, the build command produces the system derivation itself, which is a collection of all system components. This is primarily useful for development, testing, or integration into a custom image-building process.
+
+* Generic ARM SBC:
+  * Command: nix build .#nixosConfigurations.archibaldOS-arm-generic.config.system.build.toplevel
+  * Output: A link to the system derivation in ./result.
+* Headless server:
+  * Command: nix build .#nixosConfigurations.archibaldOS-server.config.system.build.toplevel
+  * Output: A link to the system derivation in ./result.
+
+After a successful build, you can verify its reproducibility by checking the hash of the output against a known-good build:
+
+nix store verify --recursive result/
+
+
+Building a complete operating system can be resource-intensive, and special considerations are needed for systems with limited memory or CPU power.
+
+4.3 Building in Resource-Constrained Environments
+
+Building ArchibaldOS, particularly when cross-compiling, is a memory-intensive process. Evaluating the Nix flake can consume over 8GB of RAM, while compilation jobs can peak at 20-40GB. To avoid out-of-memory (OOM) errors, systems with less than 32GB of RAM should be configured with at least 56GB of total virtual memory (RAM + SWAP).
+
+To set up a large SWAP file, follow these steps:
+
+1. Create the Swap File: Use fallocate to create a 32GB file.
+2. Set Permissions and Format: Secure the file and format it as swap space.
+3. Enable the Swap File: Activate the new swap space.
+4. Make it Persistent: Add an entry to /etc/fstab to ensure it's enabled on boot.
+5. Tune Swappiness: Lower the vm.swappiness value to instruct the kernel to favor using RAM over swap.
+
+To prevent system freezes during compilation, you can manage CPU resources using several strategies:
+
+* Limit Nix Parallelism: Control the number of concurrent build jobs and the cores allocated to each job. This can be done globally in your Nix configuration (nix.settings) or on a per-build basis with flags.
+* Kernel-Level Core Isolation: Use the isolcpus kernel boot parameter to reserve specific CPU cores for the build process, preventing it from interfering with system responsiveness. You can then use taskset to pin the build command to these isolated cores.
+* Advanced Cgroups: On systems with cgroups v2, you can create a systemctl override to strictly limit the CPU and memory resources available to the nix-daemon.
+
+Empirical Example: On Framework 16 (8 cores, 24GB RAM + 32GB SWAP), isolcpus=2-7 + taskset -c 2-7 nix build ... --cores 6 compiled x86 + ARM in parallel without crashes. Total time: ~3 hours vs. 1.5 hours unconstrained. SWAP usage peaked at 28GB during linking.
+
+Once the installation media has been successfully built, the next step is to install the operating system.
+
+5.0 Installation Procedures
+
+5.1 x86_64 Desktop and Laptop Installation
+
+Installation on x86_64 systems is handled via the bootable Live ISO, which provides a full desktop environment and the user-friendly Calamares graphical installer.
+
+First, flash the built ISO image to a USB drive. Use a tool like dd, replacing /dev/sdX with the correct device identifier for your USB drive.
+
+sudo dd if=./result/iso/*.iso of=/dev/sdX bs=4M status=progress conv=fsync
+
+
+Follow these steps to complete the installation:
+
+1. Boot Live ISO: Boot your computer from the newly created USB media. The system will automatically log you into a KDE Plasma 6 session as the nixos user (password: nixos).
+2. Run Calamares Installer: Launch the "Install ArchibaldOS" application from the desktop. Follow the guided steps for language selection, partitioning (EFI is recommended for modern UEFI systems), and user account creation.
+3. Post-Installation: Once the installation is complete, reboot the system and remove the installation media when prompted. Log in using the user account you created during the installation process.
+4. System Verification: Open a terminal and run the diagnostic tools rt-check and audio-latency-test (requires a physical loopback cable) to verify that the real-time audio subsystem is performing correctly.
+5. Apply Customizations (Flake-Based Workflow): For robust and reproducible system management, avoid direct edits to /etc/nixos/configuration.nix. Instead, adopt a flake-based workflow. Copy the official ArchibaldOS repository to a new, private version-controlled location (e.g., a private Git repository). Make your customizations within this new flake, then apply them with the following command, ensuring the path and target name match your setup:
+6. This method ensures all system changes are tracked, reproducible, and easily shareable or revertible, embodying the core principles of a production-grade deployment.
+
+The installation process for ARM-based devices follows a different procedure.
+
+5.2 ARM64 Single-Board Computer (SBC) Installation
+
+Deploying ArchibaldOS on an ARM SBC involves flashing a pre-built disk image directly onto an SD card or eMMC storage.
+
+First, flash the .img file to your SD card. If the image is compressed (.img.zst), decompress it first.
+
+zstd -d archibaldos-*.img.zst -o archibaldos.img
+sudo dd if=archibaldos.img of=/dev/sdX bs=4M status=progress conv=fsync
+
+
+Follow these steps to set up the SBC:
+
+1. Boot System: Insert the flashed SD card into your SBC and power it on. The system is configured to automatically log in as the audio-user.
+2. Verify & Configure: Open a terminal and run initial verification checks. Use rt-check to confirm the real-time configuration, audio-latency-test to measure performance, and pw-metadata -n settings 0 to view the current PipeWire settings.
+3. Customize System: To apply custom configurations, use a local Nix flake. Place your configuration in a directory and run the following command, replacing the path and target name as needed: sudo nixos-rebuild switch --flake /path/to/config#orangepi5.
+
+For more detailed instructions on specific hardware, refer to the SBC-INSTALL.md and INSTALL.md (for Apple Silicon) documents included in the source repository.
+
+After installation, you can begin configuring and customizing the system to meet your specific needs.
+
+6.0 Post-Installation Configuration and Customization
+
+6.1 Tuning Audio Latency
+
+Audio latency can be fine-tuned by adjusting the PipeWire quantum (buffer) size. A smaller quantum reduces latency but increases CPU load, while a larger quantum increases stability at the cost of higher latency. Finding the right balance is key and depends on the capabilities of your specific hardware.
+
+This setting can be adjusted in your Nix configuration with the following snippet:
+
+services.pipewire.extraConfig.pipewire."92-low-latency" = {
+  context.properties = {
+    default.clock.quantum = 64; # Adjust this value
+  };
+};
+
+
+The following table provides platform-specific recommendations.
+
+Platform	Recommended Quantum	Analysis
+x86_64	32 or 64	The default of 32 samples is aggressive and provides the lowest latency, but 64 may be required to eliminate xruns on some hardware. DeMoD presets target 64 for 192kHz SDR stability.
+aarch64	128 or 256	The default of 128 samples provides a stable balance. Increase to 256 if experiencing xruns, as ARM kernels may not have full PREEMPT_RT support.
+
+Beyond performance tuning, you can also optimize the system for resource-constrained hardware.
+
+6.2 Optimizing for Low-Specification Hardware
+
+The default KDE Plasma 6 desktop environment consumes between 600-900MB of RAM at idle. While efficient for modern hardware, this can be excessive for legacy systems with 4GB of RAM or less. To maximize available resources for audio processing, the recommended strategy is to disable the Plasma desktop and boot directly into a lightweight window manager (WM).
+
+WM	RAM (idle)	GPU	Latency Impact	Use Case
+DWM	~120MB	No compositor	Negligible	Ultra-minimal, patchable, ideal for e-waste
+Hyprland	~180MB	Wayland compositor	+0.1ms (negligible)	Smooth animations, tiling, modern look
+i3	~140MB	X11	None	Classic tiling, scriptable
+
+This optimization yields significant performance benefits:
+
+* RAM Savings: Switching from Plasma 6 to DWM can free up over 680MB of RAM for audio buffers and plugins.
+* CPU Overhead Reduction: A lightweight WM reduces idle CPU usage from 5-8% to less than 1%, which helps prevent thermal throttling on older hardware.
+* Improved Determinism: With fewer background services running, there are fewer context switches, resulting in lower system jitter.
+
+To force the system to boot into DWM instead of Plasma, add the following snippet to your Nix configuration. This example disables SDDM and Plasma, enables DWM and startx, and configures .xinitrc to automatically launch the audio stack and key applications.
+
+{ config, pkgs, ... }: {
+  # Disable Plasma
+  services.desktopManager.plasma6.enable = false;
+  services.displayManager.sddm.enable = false;
+
+  # Enable DWM
+  services.xserver.windowManager.dwm.enable = true;
+  # Optional: Apply custom patches to DWM
+  services.xserver.windowManager.dwm.package = pkgs.dwm.override {
+    patches = [ ./patches/dwm-no-border.patch ];
+  };
+
+  # Auto-start X session
+  services.xserver.displayManager.startx.enable = true;
+  services.xserver.displayManager.startx.user = "audio-user";
+
+  # .xinitrc to launch audio stack (using home-manager)
+  home-manager.users.audio-user = {
+    xsession.enable = true;
+    xsession.scriptPath = ".xinitrc";
+    home.file.".xinitrc".text = ''
+      # Start PipeWire services
+      systemctl --user start pipewire pipewire-pulse wireplumber
+      # Launch DWM with a full audio stack
+      exec dwm -c "qjackctl &" -c "guitarix &" -c "helvum &"
+    '';
+  };
+}
+
+
+Result: Boots in <8 seconds on a 2014 MacBook Air, launches DWM with QJackCtl + Guitarix + Helvum, uses 1.1GB total RAM, and sustains 96kHz/128 samples with 8+ FX—zero xruns for 1+ hour.
+
+In addition to performance, the system's aesthetic elements can also be customized.
+
+6.3 Configuring System Branding
+
+ArchibaldOS includes a configurable branding module, branding.nix, which allows you to customize the system's appearance. These features are managed by DeMoD LLC and can be enabled, disabled, or modified to suit your needs.
+
+The available branding options are configured with the following Nix snippet:
+
+branding = {
+  enable = true;
+  asciiArt = true;
+  splash = true;
+  wallpapers = true;
+  wallpaperPaths = [
+    ./path/to/custom-wallpaper.jpg
+  ];
+};
+
+
+* enable: This is the master switch that turns all branding features on or off globally.
+* asciiArt: Toggles the DeMoD LLC ASCII art that is displayed in the Text-based User Interface (TUI) installer.
+* splash: Enables the Plymouth boot splash screen. Note that this is disabled by default on ARM builds due to compatibility issues and is primarily intended for x86_64 systems.
+* wallpapers: Deploys the default ArchibaldOS wallpapers to the system.
+* wallpaperPaths: Allows you to override the default wallpapers by providing a list of paths to your own custom images.
+
+With the system installed and configured, the next section covers day-to-day operation and management.
+
+7.0 System Operation and Management
+
+7.1 Default User Accounts
+
+ArchibaldOS is configured with pre-defined user accounts tailored to different deployment scenarios, ensuring appropriate permissions and ease of access out of the box.
+
+Live ISO / x86_64
+
+* User: nixos
+* Password: nixos
+* Groups: wheel, audio, jackaudio, video, networkmanager
+* Auto-login: Enabled
+
+Installed System / ARM SBC
+
+* User: audio-user
+* Password: Set by the user during the installation process.
+* Groups: audio, jackaudio, realtime, wheel, video
+* Auto-login: Enabled on SBCs by default.
+
+Server Variant
+
+* User: admin
+* Authentication: SSH key only (password authentication is disabled).
+* Groups: wheel, docker.
+
+Note that on all variants, the system is configured with security.sudo.wheelNeedsPassword = false;, which grants passwordless sudo access to any user who is a member of the wheel group.
+
+7.2 Diagnostic and Testing Tools
+
+ArchibaldOS includes a suite of command-line tools for verifying system configuration, measuring real-time performance, and diagnosing audio-related issues.
+
+Key Diagnostic Commands
+
+Command	Purpose
+rt-check	Checks the overall real-time system configuration.
+audio-latency-test / pw-jack jack_iodelay	Tests round-trip audio latency (requires a loopback cable).
+qpwgraph / helvum	Provides a graphical patchbay to view and manage the PipeWire audio graph.
+pw-metadata -n settings 0 | grep clock	Checks current PipeWire settings, including the clock quantum.
+cat /sys/.../scaling_governor	Verifies that the CPU governor is set to 'performance'.
+rtirq status	Displays the real-time priorities assigned to system interrupts.
+htop	Monitors overall system performance and process activity.
+cyclictest ...	A DeMoD-specific tool for microsecond-level latency validation, crucial for demanding Software-Defined Radio (SDR) applications.
+
+These tools are essential for maintaining and validating the performance of your deployment.
+
+7.3 Development Workflow
+
+Managing and testing configuration changes in a NixOS environment is a safe and reproducible process. The standard workflow leverages the atomic update and rollback capabilities of Nix.
+
+To begin, enter the development shell, which provides all the necessary tools for the target architecture:
+
+# For x86_64
+nix develop
+
+# For aarch64
+nix develop .#devShells.aarch64-linux.default
+
+
+Once inside the shell, you can apply configuration changes using the following process:
+
+* Test Changes: To build and test a new configuration without making it the default boot entry, use the test command. This is useful for verifying changes in a running system without committing to them.
+* Switch to New Configuration: To build the new configuration and make it the current, active system, use the switch command.
+* Rollback: If a new configuration introduces problems, you can instantly revert to the previous known-good generation with the rollback command.
+
+This workflow provides a robust framework for system management, which can also be applied when extending the system to support new hardware.
+
+8.0 Advanced Topic: Adopting New ARM64 Hardware
+
+ArchibaldOS is designed to be extensible. Its modular architecture allows system integrators to add support for new aarch64 boards beyond the officially validated list, making it a flexible foundation for custom embedded audio devices.
+
+The general procedure for adding support for a new ARM64 device is as follows:
+
+1. Identify NixOS Support: First, check for existing NixOS support for your target board. This is often available in community-maintained flakes like nixos-hardware. If no official support exists, a custom module may need to be created.
+2. Add to Flake Inputs: If a hardware support flake is available, add it to the inputs section of the main flake.nix file.
+3. Create a Hardware Module: Create a new .nix file in the modules/ directory to contain all board-specific settings, such as the kernel package, device tree overlays, and firmware.
+4. Define a Build Target: Add a new entry to the nixosConfigurations section in flake.nix. This new target should import the base system modules along with your new hardware-specific module.
+5. Build & Test: Cross-compile an SD card image from an x86_64 host and flash it to your device. Boot the system and use the standard diagnostic tools to verify its performance.
+
+When working with ARM64, it is important to understand the nuances of its real-time kernel support compared to x86_64.
+
+* Kernel Limitations: Many ARM boards rely on vendor-specific kernels that may not have full PREEMPT_RT patch support. For this reason, ArchibaldOS sets musnix.kernel.realtime = false on ARM and instead relies on other tunings like rtirq, threadirqs, and CPU isolation to achieve low latency.
+* Performance Trade-offs: As a result, expected round-trip latencies on ARM typically fall in the 1.5–5ms range. It is advisable to avoid aggressive quantum sizes (e.g., 32 samples) and start with a more stable value like 128 or 256.
+* Development Considerations: Native builds on ARM hardware are significantly slower than on x86_64. It is strongly recommended to cross-compile from a more powerful x86 host to save development time.
+
+Example: Adding Raspberry Pi 3B Support
+
+The following is a practical walkthrough for adding support for the Raspberry Pi 3B, a popular and well-supported ARM64 board.
+
+1. Update flake.nix Inputs: Add nixos-hardware to your flake inputs.
+2. Create modules/raspberry-pi-3.nix: Create a new module that imports the RPi3 support from nixos-hardware and applies the standard ArchibaldOS audio tunings.
+3. Add Build Target in flake.nix: Define a new nixosConfiguration that includes your new module and an associated package output to build the SD image.
+4. Build & Deploy: Finally, cross-compile the image and deploy it.
+
+This structured approach allows ArchibaldOS to be adapted to a wide range of hardware platforms.
+
+9.0 Troubleshooting Guide
+
+This section provides a quick reference for common problems that may be encountered during the deployment or operation of ArchibaldOS.
+
+9.1 Audio Crackling / Xruns
+
+1. Increase the PipeWire quantum size in your configuration to 128 or 256 samples for greater stability.
+2. Verify the CPU governor is set to performance by running cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor.
+3. For diagnostic purposes, temporarily disable non-essential services that can cause interrupts, such as Bluetooth or NetworkManager, with systemctl stop bluetooth NetworkManager.
+4. Check the real-time interrupt priorities with the rtirq status command to ensure your audio device is highly prioritized.
+
+9.2 No Sound Output
+
+1. Check the status of the PipeWire user service to ensure it is running correctly: systemctl --user status pipewire.
+2. Verify that your user account is a member of the audio group by running the groups command.
+3. Generate a test tone to check the basic output path: speaker-test -c 2 -r 48000.
+4. List the available playback devices to ensure your hardware is detected: aplay -l.
+
+9.3 Plymouth Boot Splash Not Showing on ARM
+
+1. The Plymouth boot splash is disabled by default on ARM builds due to potential compatibility issues with some board firmwares.
+2. If you wish to enable it for testing, you can do so by setting branding.splash = true; in your configuration.
+
+9.4 High CPU Usage / Throttling
+
+1. High CPU usage or thermal throttling is often caused by an incorrect CPU frequency governor. Run cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor and confirm the output is performance. If not, check the powerManagement settings in your configuration.
+
+9.5 Touchscreen Calibration
+
+1. For devices with touchscreens, run the xinput_calibrator utility from a terminal and follow the on-screen instructions to calibrate the input device.
+
+10.0 Appendices
+
+10.1 Appendix A: Software Manifest
+
+This appendix lists the default audio software packages included in the primary ArchibaldOS builds.
+
+x86_64 Full Suite
+
+* DAWs/Editors: Ardour, Reaper, Qtractor, Zrythm, Audacity
+* Plugin Hosts: Carla, Cardinal, Jalv
+* Synths: Surge, Helm, ZynAddSubFX, FluidSynth
+* Guitar/Bass: Guitarix
+* Programming: Faust (with ALSA/JACK/Csound/LV2 backends), SuperCollider, Pure Data, Csound
+* Effects: Dragonfly Reverb, Calf plugins
+* MIDI Tools: VMPK, QMidiNet
+* Utilities: QJackCtl, Helvum, QPWGraph, JACK tools
+* DeMoD Extensions: yabridge for VST bridging, GNU Radio for SDR demodulation.
+
+ARM64 Optimized Lite Suite
+
+* DAWs: Qtractor
+* Guitar: Guitarix
+* Programming: Pure Data
+* Tools: JACK, QJackCtl, Helvum, QPWGraph, Pavucontrol
+* DeMoD Additions: SuperCollider 3.13, sc3-plugins, Quarks for lightweight DSP.
+
+Note: Additional packages can be installed post-boot via the Nix package manager for greater scalability.
+
+10.2 Appendix B: Core Configuration Reference
+
+This table provides a quick reference for the most critical kernel parameters and system settings used to achieve real-time performance in ArchibaldOS.
+
+Configuration Type	Parameter	Default Value / Setting
+Kernel Boot Parameter	threadirqs	Enabled (all targets)
+Kernel Boot Parameter	isolcpus	1-3 or higher (x86_64)
+Kernel Boot Parameter	nohz_full	1-3 or higher (x86_64/ARM)
+Kernel Boot Parameter	intel_idle.max_cstate	1 (x86_64)
+Kernel Boot Parameter	processor.max_cstate	1 (x86_64)
+Kernel Sysctl	vm.swappiness	0
+Kernel Sysctl	dev.rtc.max-user-freq	2048
+Power Management	cpuFreqGovernor	performance
+Musnix Setting	kernel.realtime	true (x86_64), false (aarch64)
+Musnix Setting	rtirq.enable	true
+Musnix Setting	rtirq.highList	"snd_usb_audio" (aarch64)
+PipeWire Setting	default.clock.quantum	32 (x86_64), 128 (aarch64)
+
+10.3 Appendix C: License and Acknowledgments
+
+ArchibaldOS is released under the MIT License.
+
+MIT License
+
+Copyright © 2025 DeMoD LLC. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Acknowledgments
+
+ArchibaldOS is built upon the outstanding work of numerous open-source projects and communities. We extend our sincere gratitude to:
+
+* Musnix: For providing the essential real-time kernel patches and audio optimizations that form the core of our low-latency performance.
+* nixos-rk3588: For delivering excellent hardware support for the Orange Pi 5 and other Rockchip-based devices.
+* Asahi Linux: For their pioneering work in enabling Linux support on Apple Silicon hardware.
+* Disko: For simplifying storage management with its declarative disk partitioning framework.
+* Calamares: For providing a user-friendly and robust graphical system installer.
+* PipeWire/JACK: For developing the next-generation professional audio infrastructure for Linux.
+* NixOS Community: For creating and maintaining the powerful, reproducible system architecture that makes ArchibaldOS possible.
+* DeMoDulation: For providing the DSP and SDR extensions that showcase the capabilities of the platform.
