@@ -1,0 +1,88 @@
+ArchibaldOS Study Guide
+
+This guide is designed to review and reinforce understanding of the ArchibaldOS project, its features, architecture, and deployment procedures as detailed in the provided source documentation.
+
+Quiz: Short Answer Questions
+
+Instructions: Answer the following questions in 2-3 sentences, using only information provided in the source context.
+
+1. What is the core purpose of ArchibaldOS and who is its target audience?
+2. Explain the "minimal oligarchy" philosophy and how it influences the design of ArchibaldOS.
+3. What are the key differences in real-time kernel configuration between the x86_64 and ARM64 builds of ArchibaldOS?
+4. Describe the role of Musnix within the ArchibaldOS ecosystem.
+5. What measured round-trip latency can be expected on an x86_64 system versus an Orange Pi 5, and what kernel parameters help achieve this?
+6. How does ArchibaldOS address the challenge of building on memory-constrained systems?
+7. What is the DeMoDulation project, and what is its relationship to ArchibaldOS?
+8. For what reasons would a user on low-spec hardware be advised to replace the default KDE Plasma 6 desktop environment?
+9. What are the four main build configurations defined in the flake.nix file?
+10. How does ArchibaldOS ensure system reproducibility, and why is this feature highlighted as a major advantage?
+
+
+--------------------------------------------------------------------------------
+
+
+Answer Key
+
+1. ArchibaldOS is a professional-grade, NixOS-based operating system engineered for ultra-low-latency real-time audio production. Its target audience includes musicians, audio engineers, sound designers, live performers, and embedded-audio developers.
+2. The "minimal oligarchy" philosophy prioritizes including only essential components to achieve peak performance. This results in a lightweight, power-efficient system designed for sub-5ms round-trip latency across diverse hardware.
+3. The x86_64 build uses a full PREEMPT_RT kernel for sub-millisecond responsiveness by setting musnix.kernel.realtime = true. The ARM64 build disables this (realtime = false), instead relying on board-optimized kernels and other Musnix features like RTIRQ prioritization to achieve low latency.
+4. Musnix provides the core real-time audio optimizations for ArchibaldOS. Its contributions include real-time kernel patches (on x86), RTIRQ for prioritizing audio interrupts, DAS watchdog for deadlock prevention, and ALSA sequencer support.
+5. An x86_64 system can achieve a measured round-trip latency of 1.2-1.5ms, while an Orange Pi 5 typically sees 2.1-2.4ms. Key kernel parameters that help achieve this include threadirqs, isolcpus, and nohz_full for CPU isolation and threaded interrupts.
+6. ArchibaldOS documentation recommends creating a large SWAP file (e.g., 32GB) on a fast drive to avoid out-of-memory errors. It also suggests limiting Nix build parallelism (max-jobs, cores) and using kernel-level core isolation (isolcpus with taskset) to reserve system resources.
+7. DeMoDulation is a companion open-source project for creating DIY real-time digital signal processing (DSP) and software-defined radio (SDR) devices from low-cost hardware. ArchibaldOS serves as the foundational, pre-configured operating system layer for all DeMoD builds.
+8. A user on low-spec hardware is advised to replace Plasma 6 because it can consume 600-900MB of RAM at idle. Lightweight window managers like DWM or i3 use under 150MB of RAM, freeing significant resources for audio processing and reducing CPU overhead, which is critical on older systems.
+9. The flake.nix defines four primary build configurations (nixosConfigurations). These are archibaldOS-iso for the x86_64 live installer, archibaldOS-orangepi5 for the Orange Pi 5 SBC, archibaldOS-arm-generic for generic ARM SBCs, and archibaldOS-server for a headless server variant.
+10. ArchibaldOS uses Nix Flakes for declarative configuration, which ensures bit-for-bit reproducibility across deployments. This is a major advantage because it eliminates the "it works on my machine" problem by guaranteeing that a setup on a studio workstation will be identical to one on a portable SBC, down to the binary hash.
+
+
+--------------------------------------------------------------------------------
+
+
+Essay Questions
+
+Instructions: Consider the following prompts for longer-form analysis. Use the provided source material to construct a detailed, evidence-based response.
+
+1. Discuss the multi-platform strategy of ArchibaldOS. Analyze the specific software, kernel, and hardware optimizations made for the x86_64 and ARM64 architectures, and evaluate the stated performance trade-offs between them.
+2. Explain the concept of declarative configuration as implemented in ArchibaldOS through Nix Flakes. How does this architecture benefit developers and end-users in terms of deployment, customization, updates, and system stability?
+3. Based on the provided documentation, create a detailed guide for a user with a low-spec, legacy computer (e.g., the 2014 MacBook Air mentioned) who wants to achieve the most stable, ultra-low-latency audio performance possible with ArchibaldOS. Your guide should cover hardware considerations, OS configuration changes, and justifications for each recommendation.
+4. Analyze the symbiotic relationship between ArchibaldOS and the DeMoDulation project. How does ArchibaldOS serve as an enabling technology for DeMoD, and how do the goals and hardware targets of DeMoD influence the features and development of ArchibaldOS?
+5. Describe the process of adding support for a new ARM64 single-board computer to ArchibaldOS, using the Raspberry Pi 3B example as a model. Detail the necessary steps within the flake.nix and module structure, and explain the key "nuances" and performance expectations for real-time audio on such hardware.
+
+
+--------------------------------------------------------------------------------
+
+
+Glossary of Key Terms
+
+Term	Definition
+ArchibaldOS	A professional, reproducible NixOS-based operating system designed for ultra-low-latency real-time audio production on x86_64 and ARM64 platforms.
+ARM64 (aarch64)	A 64-bit ARM architecture supported by ArchibaldOS, primarily for single-board computers (SBCs) like the Raspberry Pi 5 and Orange Pi 5.
+Asahi Linux	A project providing Linux support for Apple Silicon Macs, enabling ArchibaldOS to run on M1/M2/M3 hardware.
+Calamares	The graphical installer used in the x86_64 live ISO of ArchibaldOS, which guides users through the installation process.
+Cross-Compilation	The process of building software for one system architecture on a machine with a different architecture (e.g., building an ARM64 image on an x86_64 host), which is a built-in feature of the ArchibaldOS flake.
+cyclictest	A diagnostic tool used to measure kernel latency at the microsecond (µs) level, confirming real-time performance for DSP and SDR applications.
+DAS watchdog	A Musnix feature enabled in ArchibaldOS to prevent system deadlocks, contributing to real-time stability.
+Declarative Configuration	An approach where the desired system state is defined in configuration files (like flake.nix), and the system automatically configures itself to match that state. This allows for reproducibility, atomic updates, and rollbacks.
+DeMoD LLC	The company that engineered and maintains ArchibaldOS.
+DeMoDulation (DeMoD)	An open-source guide and platform for building DIY real-time DSP and software-defined radio (SDR) devices. ArchibaldOS is the foundational OS for this platform.
+Disko	A NixOS module used by ArchibaldOS for declarative disk partitioning, ensuring consistent storage layouts across installations.
+DWM (Dynamic Window Manager)	A lightweight, minimalist window manager recommended as an alternative to Plasma 6 on low-spec hardware to save RAM and CPU resources.
+flake.nix	The main entry point for a Nix Flakes project, defining inputs (dependencies), outputs (build targets), and configurations. In ArchibaldOS, it unifies all system variants and development shells.
+isolcpus	A kernel boot parameter used to isolate specific CPU cores from the general-purpose scheduler, allowing real-time audio threads to run on them without interruption.
+JACK (JACK Audio Connection Kit)	A professional audio server that provides low-latency audio and MIDI routing between applications. ArchibaldOS uses it via PipeWire's JACK implementation.
+KDE Plasma 6	The default desktop environment provided in ArchibaldOS, running on Wayland.
+Minimal Oligarchy	The design philosophy of ArchibaldOS, which prioritizes including only essential components to maximize performance and efficiency.
+Musnix	A set of NixOS modules and packages that provide real-time kernel patches and extensive audio-specific system optimizations. It is a core component of ArchibaldOS.
+Nix Flakes	A feature of the Nix package manager that provides a standardized, reproducible way to manage dependencies and build outputs for a project. ArchibaldOS is built as a unified flake.
+nixos-rk3588	A flake input that provides specific NixOS modules and kernel support for devices using the Rockchip RK3588 SoC, such as the Orange Pi 5.
+nohz_full	A kernel boot parameter that disables the system timer tick on specified CPU cores, reducing interruptions (jitter) for audio processing.
+PipeWire	A modern multimedia framework that handles audio and video streams. In ArchibaldOS, it provides a low-latency backbone for audio routing with compatibility for JACK and ALSA.
+PREEMPT_RT	A patchset for the Linux kernel that turns it into a fully preemptible real-time operating system. ArchibaldOS uses this on its x86_64 builds to achieve sub-millisecond latency.
+Quantum	In digital audio, the number of samples processed in a single block (buffer size). Lower quantum values result in lower latency but require more CPU power.
+rt-check	A diagnostic script used to verify that the system is correctly configured for real-time audio performance.
+RTIRQ	A Musnix script that prioritizes the interrupt requests (IRQs) of audio hardware over other system interrupts, ensuring that audio data is processed without delay.
+SBC (Single-Board Computer)	A complete computer built on a single circuit board, such as the Raspberry Pi or Orange Pi, which are target platforms for ArchibaldOS's ARM64 builds.
+swappiness	A kernel parameter that controls how aggressively the system uses swap space. ArchibaldOS sets this to 0 to prevent disk paging, which can introduce latency and audio dropouts.
+threadirqs	A kernel boot parameter that forces interrupt handler threads to run with real-time priority, improving system responsiveness for audio tasks.
+x86_64	The 64-bit version of the x86 instruction set architecture (used by Intel and AMD CPUs). It is the primary target for the highest-performance desktop and server builds of ArchibaldOS.
+Xrun	A buffer underrun or overrun in an audio system, which results in an audible click, pop, or dropout. A primary goal of ArchibaldOS is to eliminate xruns.
