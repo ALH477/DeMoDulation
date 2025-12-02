@@ -1,0 +1,169 @@
+ArchibaldOS: A Briefing on the Reproducible Real-Time Audio Operating System
+
+Executive Summary
+
+ArchibaldOS is a professional-grade, NixOS-based operating system engineered by DeMoD LLC, designed specifically for ultra-low-latency, real-time audio production. Its core value proposition is delivering bit-for-bit reproducibility across diverse hardware architectures, including x86_64 and ARM64, thereby eliminating environmental inconsistencies common in audio setups. The system is built on a "minimal oligarchy" philosophy, prioritizing only essential components to achieve peak performance.
+
+Key technologies include the Musnix framework for real-time kernel optimizations, a PipeWire/JACK audio backend, and a lightweight KDE Plasma 6 desktop environment, all declaratively managed via Nix Flakes. This architecture enables atomic updates, system rollbacks, and one-command builds for bootable ISOs and SD card images.
+
+Performance benchmarks demonstrate the system's capability, achieving measured round-trip latencies of 1.2–1.5ms on x86_64 systems with a PREEMPT_RT kernel and 1.5–3ms on ARM64 single-board computers. ArchibaldOS also serves as the foundational operating system for the DeMoD platform, a cohesive ecosystem for digital signal processing (DSP) and software-defined radio (SDR), transforming low-cost and recycled hardware into professional-grade rigs capable of sub-0.8ms latency. The project targets musicians, audio engineers, live performers, and embedded-audio developers who require deterministic, high-performance, and scalable audio environments.
+
+System Architecture and Philosophy
+
+1. NixOS Foundation and Declarative Model
+
+ArchibaldOS is built upon NixOS and is derived from the Oligarchy NixOS framework. Its architecture is fundamentally shaped by the principles of declarative configuration and reproducibility, managed through Nix Flakes.
+
+* Declarative Configuration: The entire system state—from kernel parameters and installed software to user accounts and desktop branding—is defined in a set of configuration files. This allows for the entire OS to be managed as code.
+* Reproducibility: The use of Nix Flakes ensures that building the operating system on different machines results in a bit-for-bit identical outcome. This mitigates the "it works on my machine" problem, a critical advantage in professional audio environments where consistency is paramount.
+* Atomic Updates & Rollbacks: System updates are atomic; they either complete successfully or not at all, preventing partially updated, broken states. If an update introduces instability, the system can be reverted to a previous generation in seconds without data loss.
+
+2. Modular Project Structure
+
+The system is organized into a series of distinct Nix modules, promoting a clean separation of concerns and enhancing maintainability. The main flake.nix orchestrates these modules to create different system variants.
+
+Module File	Description
+flake.nix	The main entry point defining all inputs, outputs, and build targets.
+base.nix	Configures the base system, including timezone, SSH, Nix settings, and core packages.
+audio.nix	Manages all real-time audio configurations: Musnix, PipeWire, JACK, and kernel tuning.
+desktop.nix	Defines the KDE Plasma 6 desktop environment.
+users.nix	Manages user accounts for live ISO, installed systems, and servers.
+server.nix	Contains configuration for the headless server variant.
+branding.nix	Implements DeMoD LLC branding (ASCII art, splash screens, wallpapers).
+orange-pi-5.nix	Provides hardware-specific optimizations for the Orange Pi 5.
+
+3. Unified Build System
+
+The flake.nix file defines multiple build targets, allowing for the generation of various system images from a single, unified source.
+
+* Build Targets: The system can be built as an x86_64 Live ISO, an Orange Pi 5 SD image, a generic ARM image, a headless server, and DeMoD-specific profiles.
+* Cross-Compilation: The build system natively supports cross-compilation. For instance, an aarch64-linux SD card image can be built directly on an x86_64-linux host with a single command.
+
+Real-Time Audio Performance and Optimization
+
+ArchibaldOS is meticulously tuned for ultra-low latency, employing a combination of a real-time kernel, a modern audio stack, and deep system-level optimizations.
+
+1. Core Audio Stack and Performance Metrics
+
+The audio subsystem is built around Musnix and PipeWire, configured for professional use cases.
+
+* Musnix Integration: Provides real-time kernel patches (PREEMPT_RT on x86), ALSA sequencer support, rtirq for prioritizing audio-related hardware interrupts, and das_watchdog for preventing deadlocks.
+* PipeWire and JACK: PipeWire serves as the audio server, offering compatibility with JACK, ALSA, and PulseAudio. It is configured to support quantum sizes as low as 32 samples without buffer underruns (xruns).
+
+Performance Benchmarks
+
+Platform	Kernel	Quantum (Samples @ Rate)	Theoretical Latency	Measured Round-Trip Latency (RTL)
+x86_64 (Intel i7)	PREEMPT_RT	32 @ 48kHz	0.67ms	1.2–1.5ms
+Orange Pi 5 (RK3588)	Board-Optimized	128 @ 48kHz	2.67ms	2.1–2.4ms
+Raspberry Pi 5 (BCM2712)	Board-Optimized	128 @ 48kHz	2.67ms	3.5–4ms
+DeMoD (Framework 13)	PREEMPT_RT	64 @ 96kHz	-	0.71ms
+DeMoD (E-waste i5-2xxx)	PREEMPT_RT	64 @ 96kHz	-	0.78ms
+
+2. System-Level Tuning
+
+Extensive kernel and system configurations are applied to ensure deterministic, low-jitter performance.
+
+* CPU Governor: The powerManagement.cpuFreqGovernor is set to performance to prevent CPU frequency scaling from introducing latency.
+* CPU Isolation: boot.kernelParams include isolcpus and nohz_full to isolate specific CPU cores from the general-purpose scheduler, reserving them for audio processing.
+* Interrupt Handling: The threadirqs kernel parameter forces hardware interrupts to run as schedulable kernel threads, allowing their priorities to be managed by rtirq.
+* Memory Management: vm.swappiness is set to 0 to prevent the system from using swap space, which can cause audio dropouts.
+* System Services: A systemd service is included to disable non-essential services like Bluetooth and NetworkManager on demand to further reduce system noise.
+
+3. Empirical Validation
+
+The system's performance is validated using standard industry tools and has been proven robust even on constrained and legacy hardware.
+
+* Testing Tools: Performance is measured with jack_iodelay, audio-latency-test, and cyclictest, which has shown latencies as low as 19µs on a Raspberry Pi 5.
+* Legacy Hardware: A key empirical finding is the system's ability to run professional-grade audio workloads on a 2014 MacBook Air (dual-core i5, 4GB RAM) booting from a microSD card. It sustained multiple high-CPU effects at 24-bit/96kHz, a task that causes dropouts on standard installations of macOS, Windows, or Ubuntu.
+
+Multi-Platform Support and Hardware Targets
+
+ArchibaldOS is designed for broad hardware compatibility across both x86_64 and aarch64 architectures.
+
+1. Supported Platforms
+
+Architecture	Platform Category	Examples
+x86_64	Desktop Workstations	Custom builds with Intel/AMD CPUs.
+	Laptops	Framework Laptop 13/16, legacy devices like MacBook Air (2014).
+	E-waste	Repurposed PCs (e.g., 2011-2013 Intel i5).
+aarch64	Raspberry Pi	Raspberry Pi 5 (BCM2712), Raspberry Pi 3B (BCM2837).
+	Rockchip SoCs	Orange Pi 5 (RK3588), Radxa Rock 5 (RK3588), Pinebook Pro (RK3399).
+	Amlogic SoCs	ODROID-C2, ODROID-HC4.
+	Apple Silicon (via Asahi)	M1, M2, and M3 series processors.
+
+2. Hardware-Specific Optimizations and Extensibility
+
+The system leverages specialized NixOS modules for hardware-specific support, such as nixos-rk3588 for Orange Pi 5 optimizations. It is designed to be extensible to new ARM64 boards.
+
+* Adoption Process: New hardware support can be added by identifying an existing community module (e.g., from nixos-hardware), creating a new hardware-specific module in the project, and defining a new build target in flake.nix.
+* ARM Kernel Nuances: Unlike x86_64, PREEMPT_RT is often disabled on ARM (musnix.kernel.realtime = false) due to vendor-specific kernel limitations. Low latency is instead achieved through rtirq prioritization and kernel parameter tuning (threadirqs, nohz_full).
+
+System Variants and Software Ecosystem
+
+ArchibaldOS is distributed in several pre-configured variants, each with a tailored software suite.
+
+1. Build Configurations
+
+The primary variants defined in the flake.nix include:
+
+* archibaldOS-iso: A graphical live ISO for x86_64 systems featuring the Calamares installer.
+* archibaldOS-orangepi5: An optimized SD card image for the Orange Pi 5.
+* archibaldOS-arm-generic: A generic build for other aarch64 single-board computers.
+* archibaldOS-server: A headless server variant for x86_64 with audio features disabled.
+
+2. Professional Audio Software Suites
+
+Architecture	Software Category	Included Packages
+x86_64 (Full Suite)	DAWs/Editors	Ardour, Reaper, Qtractor, Zrythm, Audacity
+	Plugin Hosts	Carla, Cardinal, Jalv
+	Synthesizers	Surge, Helm, ZynAddSubFX, FluidSynth
+	Guitar/Bass	Guitarix
+	Programming/DSP	Faust, SuperCollider, Pure Data, Csound
+	Effects	Dragonfly Reverb, Calf plugins
+	Utilities	QJackCtl, Helvum, QPWGraph, VMPK, QMidiNet
+	DeMoD Extensions	yabridge (for Windows VSTs), GNU Radio
+aarch64 (Optimized Lite)	DAWs	Qtractor
+	Guitar/Bass	Guitarix
+	Programming/DSP	Pure Data
+	Utilities	JACK, QJackCtl, Helvum, QPWGraph, Pavucontrol
+	DeMoD Additions	SuperCollider 3.13, sc3-plugins, Quarks
+
+3. Desktop Environment and Low-Specification Optimization
+
+* Default DE: KDE Plasma 6 on Wayland with the SDDM display manager provides a modern, touch-friendly interface.
+* Resource Optimization: For hardware with constrained resources (e.g., <4GB RAM), it is recommended to disable Plasma 6 and boot into a lightweight window manager like DWM, Hyprland, or i3. This can reduce idle RAM consumption from ~800MB to under 150MB, freeing critical resources for audio processing.
+
+The DeMoD Platform Integration
+
+ArchibaldOS serves as the foundational layer for the DeMoD (DeMoDulation) platform, a broader open-source project for real-time DSP and SDR.
+
+* DeMoD's Purpose: The platform enables the creation of DIY DSP devices from e-waste, Framework mainboards, and Raspberry Pi 5 boards, paired with high-resolution Behringer audio interfaces (e.g., UMC204HD).
+* Expanded Use Cases: This integration extends ArchibaldOS's utility beyond music production to SDR, scientific measurement (ultrasound, bioacoustics), security surveillance, and VR audio.
+* Companion Repository: The DeMoDulation project has its own repository containing Nix Flake profiles (demod-ewaste, demod-framework13, demod-rpi5) that build upon ArchibaldOS to provide a complete, plug-and-play DSP/SDR environment.
+
+Configuration, Build, and Deployment
+
+1. Building in Constrained Environments
+
+Nix builds for a full OS can be memory-intensive, with compilation jobs peaking at 20–40GB. For systems with less than 32GB of RAM, specific strategies are required:
+
+* SWAP Space: Use at least 56GB of total virtual memory (RAM + SWAP) on a fast drive (e.g., NVMe) to avoid out-of-memory errors.
+* Parallelism Limits: Restrict the number of concurrent build jobs and cores per job in the Nix configuration (nix.settings.max-jobs, nix.settings.cores).
+* Core Isolation: Use the isolcpus kernel parameter to reserve system cores, and taskset to run Nix builds exclusively on the isolated cores, preventing system freezes.
+
+2. User Accounts
+
+The system defines distinct user accounts for different contexts:
+
+Variant	Username	Password	Key Groups	Notes
+Live ISO (x86)	nixos	nixos	wheel, audio, jackaudio, networkmanager	Auto-login enabled.
+Installed System	audio-user	Set at install	wheel, audio, jackaudio, realtime	Intended for production use.
+Server	admin	SSH Key only	wheel, docker	Passwordless sudo enabled for wheel group.
+
+3. Branding and Customization
+
+A dedicated branding.nix module allows for aesthetic customization:
+
+* ASCII Art: Displays a custom ASCII logo in the TUI installer.
+* Plymouth Boot Splash: An animated boot splash with the DeMoD logo (x86-only due to ARM compatibility issues).
+* Wallpapers: Deploys custom wallpapers system-wide, with integration for Plasma 6, GNOME, and XFCE.
